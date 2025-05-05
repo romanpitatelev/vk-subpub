@@ -1,0 +1,50 @@
+version : "2"
+
+linters:
+  default: all
+  disable:
+    - depguard
+    - exhaustruct
+    - ireturn
+    - paralleltest
+    - revive
+    - tagalign
+    - testpackage
+    - tparallel
+    - varnamelen
+  settings:
+    gocyclo:
+      min-complexity: 24
+    cyclop:
+      max-complexity: 24
+    forbidigo:
+      forbid:
+        - pattern: '^.*\.fatal.*$'
+        - pattern: '^fmt\.Print.*$'
+    lll:
+      line-length: 160
+    whitespace:
+      multi-if: false
+      multi-func: true
+  exclusions:
+    rules:
+      - path: tests/.*
+        linters:
+          - funlen
+  
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+
+run:
+  timeout: 5m
+  tests: true
+  allow-parallel-runners: true
+
+output:
+  formats:
+    text:
+      path: stdout
+      colors: true
