@@ -9,14 +9,14 @@ import (
 )
 
 type Config struct {
-	AppPort       int `env:"APP_PORT" env-default:"8081" env-description:"Application port"`
+	AppPort       int `env:"APP_PORT" env-default:"9000" env-description:"Application port"`
 	MessageBuffer int `env:"MESSAGE_BUFFER" env-default:"100" emv-description:"Message buffer"`
 }
 
-func (e *Config) getHelpString() (string, error) {
+func (c *Config) getHelpString() (string, error) {
 	baseHeader := "Environment variables that can be set with env: "
 
-	helpString, err := cleanenv.GetDescription(e, &baseHeader)
+	helpString, err := cleanenv.GetDescription(c, &baseHeader)
 	if err != nil {
 		return "", fmt.Errorf("failed to get help string: %w", err)
 	}
