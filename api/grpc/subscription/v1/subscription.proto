@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package subscription.v1;
+
+option go_package = "github.com/romanpitatelev/vk-subpub/pkg/subscription-service";
+
+import "google/protobuf/empty.proto";
+
+service PubSub {
+    rpc Subscribe(SubscribeRequest) returns (stream Event);
+    rpc Publish(PublishRequest) returns (google.protobuf.Empty);
+}
+
+message SubscribeRequest {
+    string key = 1;
+}
+
+message PublishRequest {
+    string key = 1;
+    string data = 2;
+}
+
+message Event {
+    string data = 1;
+}

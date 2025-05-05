@@ -7,10 +7,6 @@ import (
 	"sync/atomic"
 )
 
-const (
-	defaultBuffer = 100
-)
-
 var ErrSubPubClosed = errors.New("subpub is closed")
 
 type SubPubImpl struct {
@@ -22,7 +18,7 @@ type SubPubImpl struct {
 	chanBuffer int
 }
 
-func NewSubPub() *SubPubImpl {
+func NewSubPub(defaultBuffer int) *SubPubImpl {
 	sp := &SubPubImpl{
 		subjects:   make(map[string][]*subscription),
 		chanBuffer: defaultBuffer,

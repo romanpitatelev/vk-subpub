@@ -10,15 +10,19 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const (
+	defaultBuffer = 100
+)
+
 func TestSubPub(t *testing.T) {
 	t.Run("create NewSubPub", func(t *testing.T) {
-		sp := NewSubPub()
+		sp := NewSubPub(defaultBuffer)
 		if sp == nil {
 			t.Fatal("NewSubPub() returned nil")
 		}
 	})
 	t.Run("subscribe and publish", func(t *testing.T) {
-		sp := NewSubPub()
+		sp := NewSubPub(defaultBuffer)
 
 		var received string
 		sub, err := sp.Subscribe("test", func(msg interface{}) {
@@ -40,7 +44,7 @@ func TestSubPub(t *testing.T) {
 		}
 	})
 	t.Run("unsubscribe successful", func(t *testing.T) {
-		sp := NewSubPub()
+		sp := NewSubPub(defaultBuffer)
 
 		called := false
 		sub, _ := sp.Subscribe("test", func(msg interface{}) {
@@ -56,7 +60,7 @@ func TestSubPub(t *testing.T) {
 		}
 	})
 	t.Run("close", func(t *testing.T) {
-		sp := NewSubPub()
+		sp := NewSubPub(defaultBuffer)
 
 		_, err := sp.Subscribe("test", func(msg interface{}) {})
 		if err != nil {
@@ -77,7 +81,7 @@ func TestSubPub(t *testing.T) {
 		}
 	})
 	t.Run("close with unprocessed messages", func(t *testing.T) {
-		sp := NewSubPub()
+		sp := NewSubPub(defaultBuffer)
 
 		var wg sync.WaitGroup
 		wg.Add(1)
@@ -109,7 +113,7 @@ func TestSubPub(t *testing.T) {
 		}
 	})
 	t.Run("several subscribers", func(t *testing.T) {
-		sp := NewSubPub()
+		sp := NewSubPub(defaultBuffer)
 
 		var count int
 		var mu sync.Mutex
@@ -135,7 +139,7 @@ func TestSubPub(t *testing.T) {
 		mu.Unlock()
 	})
 	t.Run("slow subscriber", func(t *testing.T) {
-		sp := NewSubPub()
+		sp := NewSubPub(defaultBuffer)
 
 		slowDone := make(chan struct{})
 		fastDone := make(chan struct{})
@@ -170,7 +174,7 @@ func TestSubPub(t *testing.T) {
 		}
 	})
 	t.Run("publish to nonexistent subject", func(t *testing.T) {
-		sp := NewSubPub()
+		sp := NewSubPub(defaultBuffer)
 
 		err := sp.Publish("nonexistent", "message")
 		if err != nil {
@@ -178,7 +182,7 @@ func TestSubPub(t *testing.T) {
 		}
 	})
 	t.Run("subscribe after close", func(t *testing.T) {
-		sp := NewSubPub()
+		sp := NewSubPub(defaultBuffer)
 		sp.Close(context.Background())
 
 		_, err := sp.Subscribe("test", func(msg interface{}) {})
@@ -187,7 +191,7 @@ func TestSubPub(t *testing.T) {
 		}
 	})
 	t.Run("concurrent publish and subscribe", func(t *testing.T) {
-		sp := NewSubPub()
+		sp := NewSubPub(defaultBuffer)
 		var wg sync.WaitGroup
 
 		for range 10 {
@@ -217,7 +221,7 @@ func TestSubPub(t *testing.T) {
 		wg.Wait()
 	})
 	t.Run("unsubscribe race", func(t *testing.T) {
-		sp := NewSubPub()
+		sp := NewSubPub(defaultBuffer)
 
 		sub, err := sp.Subscribe("test", func(msg interface{}) {})
 		if err != nil {
@@ -240,7 +244,7 @@ func TestSubPub(t *testing.T) {
 		wg.Wait()
 	})
 	t.Run("order of messages", func(t *testing.T) {
-		sp := NewSubPub()
+		sp := NewSubPub(defaultBuffer)
 
 		var results []int
 		var mu sync.Mutex
