@@ -17,6 +17,7 @@ func Run(cfg *configs.Config) error {
 	grpcServer := server.New(
 		server.Config{
 			Port:          fmt.Sprintf(":%d", cfg.AppPort),
+			Timeout:       cfg.Timeout,
 			MessageBuffer: cfg.MessageBuffer,
 		})
 

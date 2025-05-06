@@ -3,14 +3,16 @@ package configs
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/rs/zerolog/log"
 )
 
 type Config struct {
-	AppPort       int `env:"APP_PORT" env-default:"9000" env-description:"Application port"`
-	MessageBuffer int `env:"MESSAGE_BUFFER" env-default:"100" emv-description:"Message buffer"`
+	AppPort       int           `env:"APP_PORT" env-default:"9000" env-description:"Application port"`
+	Timeout       time.Duration `env:"TIMEOUT" env-default:"5s" env-description:"Timeout"`
+	MessageBuffer int           `env:"MESSAGE_BUFFER" env-default:"100" emv-description:"Message buffer"`
 }
 
 func (c *Config) getHelpString() (string, error) {

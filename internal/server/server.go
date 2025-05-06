@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"time"
 
 	"github.com/romanpitatelev/vk-subpub/pkg/subpub"
 	subscription_service "github.com/romanpitatelev/vk-subpub/pkg/subscription-service/gen/go"
@@ -17,6 +18,7 @@ import (
 
 type Config struct {
 	Port          string
+	Timeout       time.Duration
 	MessageBuffer int
 }
 
