@@ -2,11 +2,12 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"time"
 
-	"github.com/romanpitatelev/vk-subpub/pkg/subpub"
+	"github.com/romanpitatelev/vk-subpub/internal/subpub"
 	subscription_service "github.com/romanpitatelev/vk-subpub/pkg/subscription-service/gen/go"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
@@ -54,9 +55,18 @@ func (s *Server) Run(ctx context.Context) error {
 
 	go func() {
 		<-ctx.Done()
+		log.Info().Msg("shutting down server ...")
+
+		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.subPub.Close(closeCtx); err != nil {
+			log.Error().Err(err).Msg("failed to close subpub")
+		}
+
 		s.grpcServer.GracefulStop()
 	}()
 
+	log.Info().Msg("server is running")
 	if err := s.grpcServer.Serve(listener); err != nil {
 		return fmt.Errorf("failed to serve in s.grpcServer(listener): %w", err)
 	}
@@ -69,10 +79,11 @@ func (s *Server) Subscribe(req *subscription_service.SubscribeRequest, stream gr
 		return status.Errorf(codes.InvalidArgument, "failed to validate subscribe request: %v", err)
 	}
 
-	sub, err := s.subPub.Subscribe(req.Key, func(msg interface{}) {
+	sub, err := s.subPub.Subscribe(req.GetKey(), func(msg interface{}) {
 		event, ok := msg.(*subscription_service.Event)
 		if !ok {
 			log.Error().Msg("invalid message type in callback function")
+
 			return
 		}
 
@@ -83,9 +94,12 @@ func (s *Server) Subscribe(req *subscription_service.SubscribeRequest, stream gr
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to subscribe: %v", err)
 	}
+	log.Info().Str("key", req.GetKey()).Msg("new subscription")
 
 	<-stream.Context().Done()
 	sub.Unsubscribe()
+	log.Info().Str("key", req.GetKey()).Msg("subscription ended")
+
 	return nil
 }
 
@@ -95,16 +109,16 @@ func (s *Server) Publish(ctx context.Context, req *subscription_service.PublishR
 	}
 
 	event := &subscription_service.Event{
-		Data: req.Data,
+		Data: req.GetData(),
 	}
 
-	if err := s.subPub.Publish(req.Key, event); err != nil {
-		switch err {
-		case subpub.ErrSubPubClosed:
-			return nil, status.Error(codes.Unavailable, "service is unavailable")
-		default:
-			return nil, status.Errorf(codes.Internal, "failed to publish: %v", err)
+	if err := s.subPub.Publish(req.GetKey(), event); err != nil {
+		if errors.Is(err, subpub.ErrSubPubClosed) {
+			return nil, status.Errorf(codes.Unavailable, "service is unavailable: %v", err)
 		}
+
+		return nil, status.Errorf(codes.Internal, "failed to publish: %v", err)
+
 	}
 
 	return &emptypb.Empty{}, nil
@@ -124,9 +138,8 @@ func validateRequest[T ValidateRequest](req T) error {
 		return status.Error(codes.InvalidArgument, "key cannot be empty")
 	}
 
-	switch r := any(req).(type) {
-	case *subscription_service.PublishRequest:
-		if r.Data == "" {
+	if pubReq, ok := any(req).(*subscription_service.PublishRequest); ok {
+		if pubReq.GetData() == "" {
 			return status.Error(codes.InvalidArgument, "data cannot be empty")
 		}
 	}

@@ -3,8 +3,11 @@ package subpub
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
+
+	"github.com/rs/zerolog/log"
 )
 
 var ErrSubPubClosed = errors.New("subpub is closed")
@@ -65,6 +68,8 @@ func (sp *SubPubImpl) Subscribe(subject string, cb MessageHandler) (Subscription
 		parent:  sp,
 	}
 
+	log.Info().Msgf("user %d has subscribed for the subject %s", subscript.id, subscript.subject)
+
 	sp.subjects[subject] = append(sp.subjects[subject], subscript)
 
 	go func() {
@@ -86,6 +91,7 @@ func (sp *SubPubImpl) Publish(subject string, msg interface{}) error {
 
 	subscriptions, ok := sp.subjects[subject]
 	if !ok {
+		log.Debug().Str("subject", subject).Msg("no subscribers for the subject")
 		return nil
 	}
 
@@ -135,7 +141,7 @@ func (sp *SubPubImpl) Close(ctx context.Context) error {
 	case <-done:
 		return nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return fmt.Errorf("subpub shutdown has been interrupted: %w", ctx.Err())
 	}
 }
 
@@ -157,11 +163,14 @@ func (sp *SubPubImpl) unsubscribe(id uint64) {
 		for i, subscription := range subscriptions {
 			if subscription.id == id {
 				close(subscription.ch)
+				log.Info().Msgf("subscriber %d has unsubscribed from the service", id)
+
 				sp.subjects[subject] = append(subscriptions[:i], subscriptions[i+1:]...)
 
 				if len(sp.subjects[subject]) == 0 {
 					delete(sp.subjects, subject)
 				}
+
 				return
 			}
 		}

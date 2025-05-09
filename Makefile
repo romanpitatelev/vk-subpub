@@ -3,8 +3,14 @@ PROTO_FILE=subscription.proto
 OUT_DIR=pkg/subscription-service/gen/go
 
 run: 
-	go build -o bin/subpub ./subpub.go
-	./bin/subpub
+	go build -o bin/main ./cmd/subscription-service/main.go
+	./bin/main
+
+up:
+	docker compose up -d
+
+down:
+	docker compose down
 
 tidy:
 	go mod tidy

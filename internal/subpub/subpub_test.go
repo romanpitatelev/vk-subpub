@@ -3,6 +3,7 @@ package subpub
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -25,12 +26,14 @@ func TestSubPub(t *testing.T) {
 		sp := NewSubPub(defaultBuffer)
 
 		var received string
+
 		sub, err := sp.Subscribe("test", func(msg interface{}) {
 			received = msg.(string)
 		})
 		if err != nil {
 			t.Fatalf("subscribe failed: %v", err)
 		}
+
 		defer sub.Unsubscribe()
 
 		err = sp.Publish("test", "hello")
@@ -39,6 +42,7 @@ func TestSubPub(t *testing.T) {
 		}
 
 		time.Sleep(100 * time.Millisecond)
+
 		if received != "hello" {
 			t.Errorf("expected 'hello', got %q", received)
 		}
@@ -55,6 +59,7 @@ func TestSubPub(t *testing.T) {
 		sp.Publish("test", "should not be received")
 
 		time.Sleep(100 * time.Millisecond)
+
 		if called {
 			t.Error("handler was called after unsubscribe")
 		}
@@ -67,7 +72,7 @@ func TestSubPub(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 		defer cancel()
 
 		err = sp.Close(ctx)
@@ -76,7 +81,7 @@ func TestSubPub(t *testing.T) {
 		}
 
 		err = sp.Publish("test", "should fail")
-		if err != ErrSubPubClosed {
+		if !errors.Is(err, ErrSubPubClosed) {
 			t.Errorf("expected ErrSubPubClosed  error after close, got %v", err)
 		}
 	})
@@ -84,6 +89,7 @@ func TestSubPub(t *testing.T) {
 		sp := NewSubPub(defaultBuffer)
 
 		var wg sync.WaitGroup
+
 		wg.Add(1)
 
 		_, err := sp.Subscribe("test", func(msg interface{}) {
@@ -96,7 +102,7 @@ func TestSubPub(t *testing.T) {
 
 		sp.Publish("test", "message")
 
-		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 		defer cancel()
 
 		done := make(chan struct{})
@@ -115,10 +121,12 @@ func TestSubPub(t *testing.T) {
 	t.Run("several subscribers", func(t *testing.T) {
 		sp := NewSubPub(defaultBuffer)
 
-		var count int
-		var mu sync.Mutex
+		var (
+			count int
+			mu    sync.Mutex
+		)
 
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			_, err := sp.Subscribe("test", func(msg interface{}) {
 				mu.Lock()
 				count++
@@ -186,31 +194,38 @@ func TestSubPub(t *testing.T) {
 		sp.Close(context.Background())
 
 		_, err := sp.Subscribe("test", func(msg interface{}) {})
-		if err != ErrSubPubClosed {
+		if !errors.Is(err, ErrSubPubClosed) {
 			t.Errorf("expected ErrSubPubClosed, got %v", err)
 		}
 	})
 	t.Run("concurrent publish and subscribe", func(t *testing.T) {
 		sp := NewSubPub(defaultBuffer)
+
 		var wg sync.WaitGroup
 
 		for range 10 {
 			wg.Add(1)
+
 			go func() {
 				defer wg.Done()
+
 				sub, err := sp.Subscribe("test", func(msg interface{}) {})
 				if err != nil {
 					t.Error(err)
+
 					return
 				}
+
 				defer sub.Unsubscribe()
 			}()
 		}
 
 		for range 10 {
 			wg.Add(1)
+
 			go func() {
 				defer wg.Done()
+
 				err := sp.Publish("test", "message")
 				if err != nil {
 					t.Error(err)
@@ -229,6 +244,7 @@ func TestSubPub(t *testing.T) {
 		}
 
 		var wg sync.WaitGroup
+
 		wg.Add(2)
 
 		go func() {
@@ -246,9 +262,12 @@ func TestSubPub(t *testing.T) {
 	t.Run("order of messages", func(t *testing.T) {
 		sp := NewSubPub(defaultBuffer)
 
-		var results []int
-		var mu sync.Mutex
-		var wg sync.WaitGroup
+		var (
+			results []int
+			mu      sync.Mutex
+			wg      sync.WaitGroup
+		)
+
 		wg.Add(10)
 
 		sub, err := sp.Subscribe("test", func(msg interface{}) {
@@ -269,13 +288,17 @@ func TestSubPub(t *testing.T) {
 
 		wg.Wait()
 		mu.Lock()
+
 		if len(results) != 10 {
 			t.Errorf("expected 10 messages, got %d", len(results))
 		}
-		for i := 0; i < 10; i++ {
+
+		for i := range 10 {
 			log.Debug().Msgf("results: %v", results)
+
 			if results[i] != i {
 				t.Errorf("out of order message at %d: got %d", i, results[i])
+
 				break
 			}
 		}
