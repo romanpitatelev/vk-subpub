@@ -92,15 +92,18 @@ func (sp *SubPubImpl) Publish(subject string, msg interface{}) error {
 	subscriptions, ok := sp.subjects[subject]
 	if !ok {
 		log.Debug().Str("subject", subject).Msg("no subscribers for the subject")
+
 		return nil
 	}
 
 	for _, sub := range subscriptions {
 		sp.wg.Add(1)
-		go func(s *subscription) {
+
+		go func(sub *subscription) {
 			defer sp.wg.Done()
 			defer func() {
 				if r := recover(); r != nil {
+					log.Info().Msgf("recovered from panic in subscription handler: %v", r)
 				}
 			}()
 			select {

@@ -17,6 +17,10 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
+const (
+	timeout = 5 * time.Second
+)
+
 type Config struct {
 	Port          string
 	Timeout       time.Duration
@@ -57,15 +61,16 @@ func (s *Server) Run(ctx context.Context) error {
 		<-ctx.Done()
 		log.Info().Msg("shutting down server ...")
 
-		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		closeCtx, cancel := context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 
-		timer := time.AfterFunc(5*time.Second, func() {
+		timer := time.AfterFunc(timeout, func() {
 			log.Info().Msg("server could not stop gracefully in time. Doing force stop.")
 			s.grpcServer.Stop()
 		})
 		defer timer.Stop()
 
+		//nolint:contextcheck
 		if err := s.subPub.Close(closeCtx); err != nil {
 			log.Error().Err(err).Msg("failed to close subpub")
 		}
@@ -75,6 +80,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}()
 
 	log.Info().Msg("server is running")
+
 	if err := s.grpcServer.Serve(listener); err != nil {
 		return fmt.Errorf("failed to serve in s.grpcServer(listener): %w", err)
 	}
@@ -98,7 +104,6 @@ func (s *Server) Subscribe(req *subscription_service.SubscribeRequest, stream gr
 		if err := stream.Send(event); err != nil {
 			log.Error().Err(err).Msg("failed to send event to stream")
 		}
-
 	})
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to subscribe: %v", err)
@@ -126,7 +131,6 @@ func (s *Server) Publish(ctx context.Context, req *subscription_service.PublishR
 		}
 
 		return nil, status.Errorf(codes.Internal, "failed to publish: %v", err)
-
 	}
 
 	return &emptypb.Empty{}, nil
@@ -139,16 +143,22 @@ type ValidateRequest interface {
 
 func validateRequest[T ValidateRequest](req T) error {
 	if req == nil {
-		return status.Error(codes.InvalidArgument, "request cannot be nil")
+		err := status.Error(codes.InvalidArgument, "request cannot be nil")
+
+		return fmt.Errorf("validation failed: %w", err)
 	}
 
 	if req.GetKey() == "" {
-		return status.Error(codes.InvalidArgument, "key cannot be empty")
+		err := status.Error(codes.InvalidArgument, "key cannot be empty")
+
+		return fmt.Errorf("validation failed: %w", err)
 	}
 
 	if pubReq, ok := any(req).(*subscription_service.PublishRequest); ok {
 		if pubReq.GetData() == "" {
-			return status.Error(codes.InvalidArgument, "data cannot be empty")
+			err := status.Error(codes.InvalidArgument, "data cannot be empty")
+
+			return fmt.Errorf("validation failed: %w", err)
 		}
 	}
 

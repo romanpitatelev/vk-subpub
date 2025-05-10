@@ -12,14 +12,13 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 )
 
+const (
+	ctxTimeout = 5 * time.Second
+)
+
 type Client struct {
 	conn   *grpc.ClientConn
 	client subscription_service.PubSubClient
-}
-
-type Subscription struct {
-	stream subscription_service.PubSub_SubscribeClient
-	cancel context.CancelFunc
 }
 
 func New(ctx context.Context, addr string, opts ...grpc.DialOption) (*Client, error) {
@@ -39,7 +38,11 @@ func New(ctx context.Context, addr string, opts ...grpc.DialOption) (*Client, er
 }
 
 func (c *Client) Close() error {
-	return c.conn.Close()
+	if err := c.conn.Close(); err != nil {
+		return fmt.Errorf("failed to close client connection: %w", err)
+	}
+
+	return nil
 }
 
 func (c *Client) Subscribe(ctx context.Context, key string) (<-chan *subscription_service.Event, error) {
@@ -47,10 +50,14 @@ func (c *Client) Subscribe(ctx context.Context, key string) (<-chan *subscriptio
 		return nil, ErrKeyEmpty
 	}
 
-	stream, err := c.client.Subscribe(ctx, &subscription_service.SubscribeRequest{
+	subCtx, cancel := context.WithCancel(ctx)
+
+	stream, err := c.client.Subscribe(subCtx, &subscription_service.SubscribeRequest{
 		Key: key,
 	})
 	if err != nil {
+		cancel()
+
 		return nil, fmt.Errorf("failed to subscribe: %w", err)
 	}
 
@@ -58,6 +65,7 @@ func (c *Client) Subscribe(ctx context.Context, key string) (<-chan *subscriptio
 
 	go func() {
 		defer close(eventChan)
+		defer cancel()
 
 		for {
 			event, err := stream.Recv()
@@ -67,6 +75,7 @@ func (c *Client) Subscribe(ctx context.Context, key string) (<-chan *subscriptio
 
 					return
 				}
+
 				log.Error().Err(err).Str("key", key).Msg("subscription error")
 
 				return
@@ -92,7 +101,7 @@ func (c *Client) Publish(ctx context.Context, key, data string) error {
 		return ErrDataEmpty
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, ctxTimeout)
 	defer cancel()
 
 	_, err := c.client.Publish(ctx, &subscription_service.PublishRequest{

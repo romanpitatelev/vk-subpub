@@ -15,6 +15,7 @@ const (
 	defaultBuffer = 100
 )
 
+//nolint:gocognit,gocyclo,cyclop,funlen,maintidx
 func TestSubPub(t *testing.T) {
 	t.Run("create NewSubPub", func(t *testing.T) {
 		sp := NewSubPub(defaultBuffer)
@@ -28,7 +29,7 @@ func TestSubPub(t *testing.T) {
 		var received string
 
 		sub, err := sp.Subscribe("test", func(msg interface{}) {
-			received = msg.(string)
+			received = msg.(string) //nolint:forcetypeassert
 		})
 		if err != nil {
 			t.Fatalf("subscribe failed: %v", err)
@@ -56,7 +57,7 @@ func TestSubPub(t *testing.T) {
 		})
 
 		sub.Unsubscribe()
-		sp.Publish("test", "should not be received")
+		sp.Publish("test", "should not be received") //nolint:gosec
 
 		time.Sleep(100 * time.Millisecond)
 
@@ -100,14 +101,14 @@ func TestSubPub(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		sp.Publish("test", "message")
+		sp.Publish("test", "message") //nolint:gosec
 
 		ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 		defer cancel()
 
 		done := make(chan struct{})
 		go func() {
-			sp.Close(ctx)
+			sp.Close(ctx) //nolint:gosec
 			close(done)
 		}()
 
@@ -137,7 +138,7 @@ func TestSubPub(t *testing.T) {
 			}
 		}
 
-		sp.Publish("test", "message")
+		sp.Publish("test", "message") //nolint:gosec
 
 		time.Sleep(100 * time.Millisecond)
 		mu.Lock()
@@ -167,7 +168,7 @@ func TestSubPub(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		sp.Publish("test", "message")
+		sp.Publish("test", "message") //nolint:gosec
 
 		select {
 		case <-fastDone:
@@ -191,7 +192,7 @@ func TestSubPub(t *testing.T) {
 	})
 	t.Run("subscribe after close", func(t *testing.T) {
 		sp := NewSubPub(defaultBuffer)
-		sp.Close(context.Background())
+		sp.Close(t.Context()) //nolint:gosec
 
 		_, err := sp.Subscribe("test", func(msg interface{}) {})
 		if !errors.Is(err, ErrSubPubClosed) {
@@ -254,7 +255,7 @@ func TestSubPub(t *testing.T) {
 
 		go func() {
 			defer wg.Done()
-			sp.Publish("test", "message")
+			sp.Publish("test", "message") //nolint:gosec
 		}()
 
 		wg.Wait()
@@ -272,7 +273,7 @@ func TestSubPub(t *testing.T) {
 
 		sub, err := sp.Subscribe("test", func(msg interface{}) {
 			mu.Lock()
-			results = append(results, msg.(int))
+			results = append(results, msg.(int)) //nolint:forcetypeassert
 			mu.Unlock()
 			wg.Done()
 		})
@@ -282,7 +283,7 @@ func TestSubPub(t *testing.T) {
 		defer sub.Unsubscribe()
 
 		for i := range 10 {
-			sp.Publish("test", i)
+			sp.Publish("test", i) //nolint:gosec
 			time.Sleep(100 * time.Millisecond)
 		}
 
