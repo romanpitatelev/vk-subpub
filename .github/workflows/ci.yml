@@ -30,7 +30,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
-      - run: go build ./cmd/containers-and-balls/main.go
+      - run: go build ./cmd/subscription-service/main.go
   
   test:
     runs-on: ubuntu-latest

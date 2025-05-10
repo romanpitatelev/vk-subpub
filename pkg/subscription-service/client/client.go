@@ -16,6 +16,11 @@ const (
 	ctxTimeout = 5 * time.Second
 )
 
+type ClientInterface interface {
+	Subscribe(ctx context.Context, key string) (<-chan *subscription_service.Event, error)
+	Publish(ctx context.Context, key, data string) error
+}
+
 type Client struct {
 	conn   *grpc.ClientConn
 	client subscription_service.PubSubClient
