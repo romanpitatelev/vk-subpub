@@ -59,11 +59,19 @@ func (s *Server) Run(ctx context.Context) error {
 
 		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+
+		timer := time.AfterFunc(5*time.Second, func() {
+			log.Info().Msg("server could not stop gracefully in time. Doing force stop.")
+			s.grpcServer.Stop()
+		})
+		defer timer.Stop()
+
 		if err := s.subPub.Close(closeCtx); err != nil {
 			log.Error().Err(err).Msg("failed to close subpub")
 		}
 
 		s.grpcServer.GracefulStop()
+		log.Info().Msg("server stopped gracefully")
 	}()
 
 	log.Info().Msg("server is running")
@@ -90,11 +98,11 @@ func (s *Server) Subscribe(req *subscription_service.SubscribeRequest, stream gr
 		if err := stream.Send(event); err != nil {
 			log.Error().Err(err).Msg("failed to send event to stream")
 		}
+
 	})
 	if err != nil {
 		return status.Errorf(codes.Internal, "failed to subscribe: %v", err)
 	}
-	log.Info().Str("key", req.GetKey()).Msg("new subscription")
 
 	<-stream.Context().Done()
 	sub.Unsubscribe()
