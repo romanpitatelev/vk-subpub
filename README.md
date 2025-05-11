@@ -32,4 +32,4 @@ grpcurl -plaintext -d '{"key": "news", "data": "breaking news!"}' localhost:9000
 ```bash
 make test
 ```
-- 
+- Покрытие составляет больше 60% 
