@@ -9,14 +9,16 @@ import (
 
 	"github.com/romanpitatelev/vk-subpub/internal/configs"
 	"github.com/romanpitatelev/vk-subpub/internal/server"
-	"github.com/romanpitatelev/vk-subpub/pkg/subscription-service/client"
+	"github.com/romanpitatelev/vk-subpub/pkg/client"
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 const (
-	testPort = 9001
+	testPort = ":9001"
 	timeout  = 5 * time.Second
 )
 
@@ -24,8 +26,6 @@ type IntegrationTestSuite struct {
 	suite.Suite
 	cancelFunc context.CancelFunc
 	server     *server.Server
-	client     *client.Client
-	grpcConn   *grpc.ClientConn
 }
 
 func (s *IntegrationTestSuite) SetupSuite() {
@@ -39,8 +39,8 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	s.cancelFunc = cancel
 
 	s.server = server.New(server.Config{
-		Port:          ":" + strconv.Itoa(testPort),
-		Timeout:       timeout,
+		Port:          cfg.AppPort,
+		Timeout:       cfg.Timeout,
 		MessageBuffer: cfg.MessageBuffer,
 	})
 
@@ -51,36 +51,34 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	}()
 
 	s.Require().Eventually(func() bool {
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort("localhost", strconv.Itoa(testPort)), 100*time.Millisecond)
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort("localhost", cfg.AppPort), 100*time.Millisecond)
 		if err != nil {
 			return false
 		}
 		conn.Close()
 		return true
 	}, 5*time.Second, 100*time.Millisecond)
+}
 
+func (s *IntegrationTestSuite) TearDownSuite() {
+	if s.cancelFunc != nil {
+		s.cancelFunc()
+	}
+}
+
+func (s *IntegrationTestSuite) newClient() (*client.Client, func()) {
 	conn, err := grpc.NewClient(
 		net.JoinHostPort("localhost", strconv.Itoa(testPort)),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	s.Require().NoError(err)
-	s.grpcConn = conn
 
-	s.client, err = client.New(context.Background(), net.JoinHostPort("localhost", strconv.Itoa(testPort)))
+	client, err := client.New(context.Background(), net.JoinHostPort("localhost", strconv.Itoa(testPort)))
 	s.Require().NoError(err)
-}
 
-func (s *IntegrationTestSuite) TearDownSuite() {
-	if s.client != nil {
-		s.client.Close()
-	}
-
-	if s.grpcConn != nil {
-		s.grpcConn.Close()
-	}
-
-	if s.cancelFunc != nil {
-		s.cancelFunc()
+	return client, func() {
+		client.Close()
+		conn.Close()
 	}
 }
 
@@ -89,5 +87,71 @@ func TestIntegrationSuite(t *testing.T) {
 }
 
 func (s *IntegrationTestSuite) TestBasicOperations() {
+	subClient, cleanupSub := s.newClient()
+	defer cleanupSub()
+	pubClient, cleanupPub := s.newClient()
+	defer cleanupPub()
 
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	eventChan, err := subClient.Subscribe(ctx, "topic-one")
+	s.Require().NoError(err)
+
+	err = pubClient.Publish(ctx, "topic-one", "message-one")
+	s.Require().NoError(err)
+
+	select {
+	case event := <-eventChan:
+		s.Equal("message-one", event.Data)
+	case <-time.After(5 * time.Second):
+		s.Fail("timeout waiting for message")
+	}
+}
+
+func (s *IntegrationTestSuite) TestInvalidRequests() {
+	tests := []struct {
+		name        string
+		action      func(*client.Client) error
+		expectedErr codes.Code
+	}{
+		{
+			name: "empty subscribe key",
+			action: func(c *client.Client) error {
+				_, err := c.Subscribe(context.Background(), "")
+				return err
+			},
+			expectedErr: codes.InvalidArgument,
+		},
+		{
+			name: "empty publish key",
+			action: func(c *client.Client) error {
+				return c.Publish(context.Background(), "", "some-data")
+			},
+			expectedErr: codes.InvalidArgument,
+		},
+		{
+			name: "empty publish data",
+			action: func(c *client.Client) error {
+				return c.Publish(context.Background(), "valid-key", "")
+			},
+			expectedErr: codes.InvalidArgument,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			client, cleanup := s.newClient()
+			defer cleanup()
+
+			err := tt.action(client)
+			s.Require().Error(err, "Test case: %s", tt.name)
+
+			st, ok := status.FromError(err)
+			s.Require().True(ok, "Expected gRPC status error")
+			s.Equal(tt.expectedErr, st.Code(),
+				"Expected status code %v, got %v for case: %s",
+				tt.expectedErr, st.Code(), tt.name)
+		})
+	}
 }

@@ -9,7 +9,9 @@ import (
 	subscription_service "github.com/romanpitatelev/vk-subpub/pkg/subscription-service/gen/go"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -52,7 +54,7 @@ func (c *Client) Close() error {
 
 func (c *Client) Subscribe(ctx context.Context, key string) (<-chan *subscription_service.Event, error) {
 	if key == "" {
-		return nil, ErrKeyEmpty
+		return nil, status.Error(codes.InvalidArgument, ErrKeyEmpty.Error())
 	}
 
 	subCtx, cancel := context.WithCancel(ctx)
@@ -99,11 +101,11 @@ func (c *Client) Subscribe(ctx context.Context, key string) (<-chan *subscriptio
 
 func (c *Client) Publish(ctx context.Context, key, data string) error {
 	if key == "" {
-		return ErrKeyEmpty
+		return status.Error(codes.InvalidArgument, ErrKeyEmpty.Error())
 	}
 
 	if data == "" {
-		return ErrDataEmpty
+		return status.Error(codes.InvalidArgument, ErrDataEmpty.Error())
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, ctxTimeout)
