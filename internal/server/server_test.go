@@ -2,13 +2,14 @@ package server_test
 
 import (
 	"context"
+	"fmt"
 	"net"
-	"strconv"
 	"testing"
 	"time"
 
 	"github.com/romanpitatelev/vk-subpub/internal/configs"
 	"github.com/romanpitatelev/vk-subpub/internal/server"
+	"github.com/romanpitatelev/vk-subpub/internal/subpub"
 	"github.com/romanpitatelev/vk-subpub/pkg/client"
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/grpc"
@@ -25,12 +26,13 @@ const (
 type IntegrationTestSuite struct {
 	suite.Suite
 	cancelFunc context.CancelFunc
+	subPub     subpub.SubPub
 	server     *server.Server
 }
 
 func (s *IntegrationTestSuite) SetupSuite() {
 	cfg := configs.Config{
-		AppPort:       testPort,
+		BindAddress:   testPort,
 		Timeout:       timeout,
 		MessageBuffer: 100,
 	}
@@ -38,11 +40,13 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.cancelFunc = cancel
 
+	s.subPub = subpub.NewSubPub(cfg.MessageBuffer)
+
 	s.server = server.New(server.Config{
-		Port:          cfg.AppPort,
+		Port:          cfg.BindAddress,
 		Timeout:       cfg.Timeout,
 		MessageBuffer: cfg.MessageBuffer,
-	})
+	}, s.subPub)
 
 	go func() {
 		if err := s.server.Run(ctx); err != nil {
@@ -51,7 +55,7 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	}()
 
 	s.Require().Eventually(func() bool {
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort("localhost", cfg.AppPort), 100*time.Millisecond)
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost%s", testPort), 100*time.Millisecond)
 		if err != nil {
 			return false
 		}
@@ -68,12 +72,12 @@ func (s *IntegrationTestSuite) TearDownSuite() {
 
 func (s *IntegrationTestSuite) newClient() (*client.Client, func()) {
 	conn, err := grpc.NewClient(
-		net.JoinHostPort("localhost", strconv.Itoa(testPort)),
+		fmt.Sprintf("localhost%s", testPort),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	s.Require().NoError(err)
 
-	client, err := client.New(context.Background(), net.JoinHostPort("localhost", strconv.Itoa(testPort)))
+	client, err := client.New(context.Background(), fmt.Sprintf("localhost%s", testPort))
 	s.Require().NoError(err)
 
 	return client, func() {
@@ -89,6 +93,7 @@ func TestIntegrationSuite(t *testing.T) {
 func (s *IntegrationTestSuite) TestBasicOperations() {
 	subClient, cleanupSub := s.newClient()
 	defer cleanupSub()
+
 	pubClient, cleanupPub := s.newClient()
 	defer cleanupPub()
 
@@ -127,13 +132,6 @@ func (s *IntegrationTestSuite) TestInvalidRequests() {
 			name: "empty publish key",
 			action: func(c *client.Client) error {
 				return c.Publish(context.Background(), "", "some-data")
-			},
-			expectedErr: codes.InvalidArgument,
-		},
-		{
-			name: "empty publish data",
-			action: func(c *client.Client) error {
-				return c.Publish(context.Background(), "valid-key", "")
 			},
 			expectedErr: codes.InvalidArgument,
 		},

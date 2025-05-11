@@ -18,6 +18,8 @@ const (
 	ctxTimeout = 5 * time.Second
 )
 
+var ErrKeyEmpty = errors.New("key cannot be empty")
+
 type ClientInterface interface {
 	Subscribe(ctx context.Context, key string) (<-chan *subscription_service.Event, error)
 	Publish(ctx context.Context, key, data string) error
@@ -54,7 +56,8 @@ func (c *Client) Close() error {
 
 func (c *Client) Subscribe(ctx context.Context, key string) (<-chan *subscription_service.Event, error) {
 	if key == "" {
-		return nil, status.Error(codes.InvalidArgument, ErrKeyEmpty.Error())
+		err := status.Error(codes.InvalidArgument, ErrKeyEmpty.Error())
+		return nil, fmt.Errorf("%w", err)
 	}
 
 	subCtx, cancel := context.WithCancel(ctx)
@@ -101,11 +104,8 @@ func (c *Client) Subscribe(ctx context.Context, key string) (<-chan *subscriptio
 
 func (c *Client) Publish(ctx context.Context, key, data string) error {
 	if key == "" {
-		return status.Error(codes.InvalidArgument, ErrKeyEmpty.Error())
-	}
-
-	if data == "" {
-		return status.Error(codes.InvalidArgument, ErrDataEmpty.Error())
+		err := status.Error(codes.InvalidArgument, ErrKeyEmpty.Error())
+		return fmt.Errorf("%w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, ctxTimeout)

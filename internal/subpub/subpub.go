@@ -108,11 +108,18 @@ func (sp *SubPubImpl) Publish(subject string, msg interface{}) error {
 
 		go func(sub *subscription) {
 			defer sp.wg.Done()
+			defer func() {
+				if r := recover(); r != nil {
+					log.Info().Msgf("recovered from panic in subscribe handler: %v", r)
+				}
+			}()
 
 			select {
 			case sub.ch <- msg:
 			default:
+				log.Info().Msg("message has not been delivered - either the channel is closed or full")
 			}
+
 		}(sub)
 	}
 
@@ -139,9 +146,9 @@ func (sp *SubPubImpl) Close(ctx context.Context) error {
 }
 
 func (s *subscription) Unsubscribe() {
-	s.once.Do(func() {
-		s.parent.unsubscribe(s.id, s.subject)
-	})
+	// s.once.Do(func() {
+	s.parent.unsubscribe(s.id, s.subject)
+	// })
 }
 
 func (sp *SubPubImpl) unsubscribe(id uint64, subject string) {

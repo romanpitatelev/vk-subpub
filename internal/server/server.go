@@ -120,7 +120,7 @@ func (s *Server) Subscribe(req *subscription_service.SubscribeRequest, stream gr
 	return nil
 }
 
-func (s *Server) Publish(ctx context.Context, req *subscription_service.PublishRequest) (*emptypb.Empty, error) {
+func (s *Server) Publish(_ context.Context, req *subscription_service.PublishRequest) (*emptypb.Empty, error) {
 	if err := validateRequest(req); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to validate publish request: %v", err)
 	}
