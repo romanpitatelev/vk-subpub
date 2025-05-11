@@ -27,6 +27,12 @@ type Config struct {
 	MessageBuffer int
 }
 
+type SubPub interface {
+	Subscribe(key string, callback func(msg interface{})) (subpub.Subscription, error)
+	Publish(subject string, msg interface{}) error
+	Close(ctx context.Context) error
+}
+
 type Server struct {
 	grpcServer *grpc.Server
 	cfg        Config
@@ -34,9 +40,7 @@ type Server struct {
 	subscription_service.UnimplementedPubSubServer
 }
 
-func New(cfg Config) *Server {
-	subPub := subpub.NewSubPub(cfg.MessageBuffer)
-
+func New(cfg Config, subPub subpub.SubPub) *Server {
 	s := &Server{
 		grpcServer: grpc.NewServer(),
 		cfg:        cfg,
@@ -116,7 +120,7 @@ func (s *Server) Subscribe(req *subscription_service.SubscribeRequest, stream gr
 	return nil
 }
 
-func (s *Server) Publish(ctx context.Context, req *subscription_service.PublishRequest) (*emptypb.Empty, error) {
+func (s *Server) Publish(_ context.Context, req *subscription_service.PublishRequest) (*emptypb.Empty, error) {
 	if err := validateRequest(req); err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "failed to validate publish request: %v", err)
 	}
@@ -137,11 +141,10 @@ func (s *Server) Publish(ctx context.Context, req *subscription_service.PublishR
 }
 
 type ValidateRequest interface {
-	*subscription_service.PublishRequest | *subscription_service.SubscribeRequest
 	GetKey() string
 }
 
-func validateRequest[T ValidateRequest](req T) error {
+func validateRequest(req ValidateRequest) error {
 	if req == nil {
 		err := status.Error(codes.InvalidArgument, "request cannot be nil")
 
@@ -152,14 +155,6 @@ func validateRequest[T ValidateRequest](req T) error {
 		err := status.Error(codes.InvalidArgument, "key cannot be empty")
 
 		return fmt.Errorf("validation failed: %w", err)
-	}
-
-	if pubReq, ok := any(req).(*subscription_service.PublishRequest); ok {
-		if pubReq.GetData() == "" {
-			err := status.Error(codes.InvalidArgument, "data cannot be empty")
-
-			return fmt.Errorf("validation failed: %w", err)
-		}
 	}
 
 	return nil

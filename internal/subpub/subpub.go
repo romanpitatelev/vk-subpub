@@ -13,17 +13,17 @@ import (
 var ErrSubPubClosed = errors.New("subpub is closed")
 
 type SubPubImpl struct {
-	subjects   map[string][]*subscription
+	subjects   map[string]map[uint64]*subscription
 	mu         sync.RWMutex
 	wg         sync.WaitGroup
-	closed     atomic.Bool
+	closed     bool
 	nextID     uint64
 	chanBuffer int
 }
 
 func NewSubPub(defaultBuffer int) *SubPubImpl {
 	sp := &SubPubImpl{
-		subjects:   make(map[string][]*subscription),
+		subjects:   make(map[string]map[uint64]*subscription),
 		chanBuffer: defaultBuffer,
 	}
 
@@ -36,7 +36,7 @@ type subscription struct {
 	ch      chan interface{}
 	handler MessageHandler
 	parent  *SubPubImpl
-	once    sync.Once
+	active  atomic.Bool
 }
 
 type MessageHandler func(msg interface{})
@@ -52,7 +52,7 @@ type SubPub interface {
 }
 
 func (sp *SubPubImpl) Subscribe(subject string, cb MessageHandler) (Subscription, error) {
-	if sp.closed.Load() {
+	if sp.closed {
 		return nil, ErrSubPubClosed
 	}
 
@@ -66,11 +66,21 @@ func (sp *SubPubImpl) Subscribe(subject string, cb MessageHandler) (Subscription
 		ch:      make(chan interface{}, sp.chanBuffer),
 		handler: cb,
 		parent:  sp,
+		active:  atomic.Bool{},
 	}
 
 	log.Info().Msgf("user %d has subscribed for the subject %s", subscript.id, subscript.subject)
 
-	sp.subjects[subject] = append(sp.subjects[subject], subscript)
+	_, exists := sp.subjects[subject]
+	if exists {
+		sp.subjects[subject][id] = subscript
+	} else {
+		subjectMap := make(map[uint64]*subscription)
+		subjectMap[id] = subscript
+		sp.subjects[subject] = subjectMap
+	}
+
+	subscript.active.Store(true)
 
 	go func() {
 		for msg := range subscript.ch {
@@ -82,33 +92,32 @@ func (sp *SubPubImpl) Subscribe(subject string, cb MessageHandler) (Subscription
 }
 
 func (sp *SubPubImpl) Publish(subject string, msg interface{}) error {
-	if sp.closed.Load() {
+	if sp.closed {
 		return ErrSubPubClosed
 	}
 
 	sp.mu.RLock()
 	defer sp.mu.RUnlock()
 
-	subscriptions, ok := sp.subjects[subject]
-	if !ok {
+	idMap, subjectExists := sp.subjects[subject]
+	if !subjectExists {
 		log.Debug().Str("subject", subject).Msg("no subscribers for the subject")
 
 		return nil
 	}
 
-	for _, sub := range subscriptions {
+	for _, sub := range idMap {
 		sp.wg.Add(1)
 
 		go func(sub *subscription) {
 			defer sp.wg.Done()
-			defer func() {
-				if r := recover(); r != nil {
-					log.Info().Msgf("recovered from panic in subscription handler: %v", r)
+
+			if sub.active.Load() {
+				select {
+				case sub.ch <- msg:
+				default:
+					log.Info().Msg("message has not been delivered - either the channel is closed or full")
 				}
-			}()
-			select {
-			case sub.ch <- msg:
-			default:
 			}
 		}(sub)
 	}
@@ -117,22 +126,9 @@ func (sp *SubPubImpl) Publish(subject string, msg interface{}) error {
 }
 
 func (sp *SubPubImpl) Close(ctx context.Context) error {
-	if !sp.closed.CompareAndSwap(false, true) {
-		return nil
-	}
+	sp.closed = true
 
 	sp.mu.Lock()
-
-	var allSubscriptions []*subscription
-
-	for _, subscriptions := range sp.subjects {
-		allSubscriptions = append(allSubscriptions, subscriptions...)
-	}
-	sp.mu.Unlock()
-
-	for _, subscription := range allSubscriptions {
-		subscription.Unsubscribe()
-	}
 
 	done := make(chan struct{})
 	go func() {
@@ -149,33 +145,37 @@ func (sp *SubPubImpl) Close(ctx context.Context) error {
 }
 
 func (s *subscription) Unsubscribe() {
-	s.once.Do(func() {
-		s.parent.unsubscribe(s.id)
-	})
+	s.active.Store(false)
+	s.parent.unsubscribe(s.id, s.subject)
 }
 
-func (sp *SubPubImpl) unsubscribe(id uint64) {
-	if sp.closed.Load() {
+func (sp *SubPubImpl) unsubscribe(id uint64, subject string) {
+	if sp.closed {
 		return
 	}
 
 	sp.mu.Lock()
 	defer sp.mu.Unlock()
 
-	for subject, subscriptions := range sp.subjects {
-		for i, subscription := range subscriptions {
-			if subscription.id == id {
-				close(subscription.ch)
-				log.Info().Msgf("subscriber %d has unsubscribed from the service", id)
+	idMap, subjectExists := sp.subjects[subject]
+	if !subjectExists {
+		log.Info().Msgf("subject %s is not found", subject)
 
-				sp.subjects[subject] = append(subscriptions[:i], subscriptions[i+1:]...)
+		return
+	}
 
-				if len(sp.subjects[subject]) == 0 {
-					delete(sp.subjects, subject)
-				}
+	subscription, idExists := idMap[id]
+	if !idExists {
+		log.Info().Msgf("subcription id %d is not found in the subject %s", id, subject)
 
-				return
-			}
-		}
+		return
+	}
+
+	close(subscription.ch)
+	delete(idMap, id)
+	log.Info().Msgf("removed subscription id %d from the subject '%s'", id, subject)
+
+	if len(idMap) == 0 {
+		log.Info().Msgf("removed empty subject '%s'", subject)
 	}
 }

@@ -10,7 +10,7 @@ import (
 )
 
 type Config struct {
-	AppPort       int           `env:"APP_PORT" env-default:"9000" env-description:"Application port"`
+	BindAddress   string        `env:"BIND_ADDRESS" env-default:":9000" env-description:"Application port"`
 	Timeout       time.Duration `env:"TIMEOUT" env-default:"5s" env-description:"Timeout"`
 	MessageBuffer int           `env:"MESSAGE_BUFFER" env-default:"100" emv-description:"Message buffer"`
 }
