@@ -36,6 +36,7 @@ type subscription struct {
 	ch      chan interface{}
 	handler MessageHandler
 	parent  *SubPubImpl
+	active  atomic.Bool
 }
 
 type MessageHandler func(msg interface{})
@@ -65,6 +66,7 @@ func (sp *SubPubImpl) Subscribe(subject string, cb MessageHandler) (Subscription
 		ch:      make(chan interface{}, sp.chanBuffer),
 		handler: cb,
 		parent:  sp,
+		active:  atomic.Bool{},
 	}
 
 	log.Info().Msgf("user %d has subscribed for the subject %s", subscript.id, subscript.subject)
@@ -78,10 +80,11 @@ func (sp *SubPubImpl) Subscribe(subject string, cb MessageHandler) (Subscription
 		sp.subjects[subject] = subjectMap
 	}
 
+	subscript.active.Store(true)
+
 	go func() {
 		for msg := range subscript.ch {
 			subscript.handler(msg)
-
 		}
 	}()
 
@@ -109,10 +112,12 @@ func (sp *SubPubImpl) Publish(subject string, msg interface{}) error {
 		go func(sub *subscription) {
 			defer sp.wg.Done()
 
-			select {
-			case sub.ch <- msg:
-			default:
-				log.Info().Msg("message has not been delivered - either the channel is closed or full")
+			if sub.active.Load() {
+				select {
+				case sub.ch <- msg:
+				default:
+					log.Info().Msg("message has not been delivered - either the channel is closed or full")
+				}
 			}
 		}(sub)
 	}
@@ -140,6 +145,7 @@ func (sp *SubPubImpl) Close(ctx context.Context) error {
 }
 
 func (s *subscription) Unsubscribe() {
+	s.active.Store(false)
 	s.parent.unsubscribe(s.id, s.subject)
 }
 
