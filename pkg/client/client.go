@@ -57,6 +57,7 @@ func (c *Client) Close() error {
 func (c *Client) Subscribe(ctx context.Context, key string) (<-chan *subscription_service.Event, error) {
 	if key == "" {
 		err := status.Error(codes.InvalidArgument, ErrKeyEmpty.Error())
+
 		return nil, fmt.Errorf("%w", err)
 	}
 
@@ -105,6 +106,7 @@ func (c *Client) Subscribe(ctx context.Context, key string) (<-chan *subscriptio
 func (c *Client) Publish(ctx context.Context, key, data string) error {
 	if key == "" {
 		err := status.Error(codes.InvalidArgument, ErrKeyEmpty.Error())
+
 		return fmt.Errorf("%w", err)
 	}
 

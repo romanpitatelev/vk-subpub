@@ -2,7 +2,6 @@ package server_test
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"testing"
 	"time"
@@ -50,16 +49,20 @@ func (s *IntegrationTestSuite) SetupSuite() {
 
 	go func() {
 		if err := s.server.Run(ctx); err != nil {
-			s.Require().NoError(err)
+			s.Require().NoError(err) //nolint:testifylint
 		}
 	}()
 
 	s.Require().Eventually(func() bool {
-		conn, err := net.DialTimeout("tcp", fmt.Sprintf("localhost%s", testPort), 100*time.Millisecond)
+		conn, err := net.DialTimeout("tcp", "localhost"+testPort, 100*time.Millisecond)
 		if err != nil {
 			return false
 		}
-		conn.Close()
+
+		if err := conn.Close(); err != nil {
+			s.T().Logf("failed to close test connection: %v", err)
+		}
+
 		return true
 	}, 5*time.Second, 100*time.Millisecond)
 }
@@ -70,19 +73,24 @@ func (s *IntegrationTestSuite) TearDownSuite() {
 	}
 }
 
-func (s *IntegrationTestSuite) newClient() (*client.Client, func()) {
+func (s *IntegrationTestSuite) NewClient() (*client.Client, func()) {
 	conn, err := grpc.NewClient(
-		fmt.Sprintf("localhost%s", testPort),
+		"localhost"+testPort,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	s.Require().NoError(err)
 
-	client, err := client.New(context.Background(), fmt.Sprintf("localhost%s", testPort))
+	client, err := client.New(context.Background(), "localhost"+testPort)
 	s.Require().NoError(err)
 
 	return client, func() {
-		client.Close()
-		conn.Close()
+		if err := client.Close(); err != nil {
+			s.T().Logf("failed to close client: %v", err)
+		}
+
+		if err := conn.Close(); err != nil {
+			s.T().Logf("failed to close connection: %v", err)
+		}
 	}
 }
 
@@ -91,10 +99,10 @@ func TestIntegrationSuite(t *testing.T) {
 }
 
 func (s *IntegrationTestSuite) TestBasicOperations() {
-	subClient, cleanupSub := s.newClient()
+	subClient, cleanupSub := s.NewClient()
 	defer cleanupSub()
 
-	pubClient, cleanupPub := s.newClient()
+	pubClient, cleanupPub := s.NewClient()
 	defer cleanupPub()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -108,7 +116,7 @@ func (s *IntegrationTestSuite) TestBasicOperations() {
 
 	select {
 	case event := <-eventChan:
-		s.Equal("message-one", event.Data)
+		s.Equal("message-one", event.GetData())
 	case <-time.After(5 * time.Second):
 		s.Fail("timeout waiting for message")
 	}
@@ -124,7 +132,8 @@ func (s *IntegrationTestSuite) TestInvalidRequests() {
 			name: "empty subscribe key",
 			action: func(c *client.Client) error {
 				_, err := c.Subscribe(context.Background(), "")
-				return err
+
+				return err //nolint:wrapcheck
 			},
 			expectedErr: codes.InvalidArgument,
 		},
@@ -139,7 +148,7 @@ func (s *IntegrationTestSuite) TestInvalidRequests() {
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			client, cleanup := s.newClient()
+			client, cleanup := s.NewClient()
 			defer cleanup()
 
 			err := tt.action(client)
